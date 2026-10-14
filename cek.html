@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cek Koneksi Database</title>
+<style>
+:root{--bg:#fff;--soft:#f6f8fa;--ink:#1f2328;--muted:#59636e;--line:#d1d9e0;--ok:#1a7f37;--ok-soft:#dafbe1;--bad:#cf222e;--bad-soft:#ffebe9;--warn-soft:#fff8c5;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color-scheme:light}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55}
+.wrap{max-width:720px;margin:0 auto;padding:32px 16px 60px;display:flex;flex-direction:column;gap:16px}
+h1{font-size:1.4rem;margin:0}
+p{margin:0}
+code{font-family:var(--mono);font-size:.88em;background:var(--soft);border:1px solid var(--line);padding:.05em .35em;border-radius:4px;word-break:break-all}
+.muted{color:var(--muted)}
+.step{border:1px solid var(--line);border-radius:8px;padding:12px 14px;display:flex;gap:12px;align-items:flex-start}
+.step .ic{flex:none;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:.8rem;border:1.5px solid var(--line);color:var(--muted)}
+.step.ok{border-color:#aceebb;background:#f6fff8}.step.ok .ic{background:var(--ok);border-color:var(--ok);color:#fff}
+.step.bad{border-color:#ffcecb;background:#fff8f7}.step.bad .ic{background:var(--bad);border-color:var(--bad);color:#fff}
+.step b{display:block}
+.step .d{font-size:.9rem;color:var(--muted);margin-top:2px}
+.step .fix{font-size:.9rem;margin-top:6px}
+.btn{font:inherit;font-weight:600;padding:8px 16px;border-radius:6px;border:1px solid var(--ok);background:var(--ok);color:#fff;cursor:pointer}
+.btn:disabled{opacity:.5}
+.box{border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:var(--soft);font-size:.9rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Cek koneksi database</h1>
+  <p class="muted">Halaman ini mengetes apakah nilai siswa bisa terkirim ke Supabase. Tes akan mengirim beberapa baris bernama <b>TES KONEKSI</b> ke tabel <code>nilai_kuis</code> dan <code>refleksi</code>. Baris itu boleh dihapus setelahnya.</p>
+  <div><button class="btn" id="go" type="button">Mulai tes</button></div>
+  <div id="steps" style="display:flex;flex-direction:column;gap:10px"></div>
+  <div class="box" id="after" hidden></div>
+</div>
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(function(){
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+function step(title,ok,detail,fix){
+  const d=document.createElement("div"); d.className="step "+(ok?"ok":"bad");
+  d.innerHTML=`<span class="ic">${ok?"✓":"✕"}</span><div><b>${title}</b>${detail?`<div class="d">${detail}</div>`:""}${!ok&&fix?`<div class="fix"><b>Cara memperbaiki:</b> ${fix}</div>`:""}</div>`;
+  $("steps").appendChild(d); return ok;
+}
+function why(m){
+  m=String(m||"");
+  if(/row-level security/i.test(m)) return "Aturan keamanan tabel menolak siswa mengirim nilai. Jalankan file <code>supabase/perbaikan-nilai.sql</code> di SQL Editor Supabase.";
+  if(/permission denied/i.test(m)) return "Tabel belum memberi izin kepada siswa. Jalankan file <code>supabase/perbaikan-nilai.sql</code> di SQL Editor Supabase.";
+  if(/does not exist|could not find the table|schema cache/i.test(m)) return "Tabel <code>nilai_kuis</code> belum ada. Jalankan file <code>supabase/schema.sql</code> di SQL Editor Supabase, lalu tes lagi.";
+  if(/invalid api key|no api key|jwt|apikey/i.test(m)) return "Kunci <code>SUPABASE_ANON_KEY</code> di config.js salah. Salin ulang kunci anon/publishable dari Project Settings &gt; API Keys.";
+  if(/failed to fetch|network|load failed/i.test(m)) return "Tidak bisa terhubung ke Supabase. Periksa <code>SUPABASE_URL</code> di config.js dan pastikan project Supabase tidak sedang di-pause (buka dashboard Supabase lalu klik Restore jika ada).";
+  if(/check constraint|violates/i.test(m)) return "Struktur tabel berbeda dari yang diharapkan. Jalankan ulang <code>supabase/schema.sql</code>.";
+  return "Kirim pesan error di atas ke pembuat kursus.";
+}
+$("go").onclick=async()=>{
+  $("go").disabled=true; $("steps").innerHTML=""; $("after").hidden=true;
+  const C=window.KURSUS_CONFIG;
+  if(!step("File config.js terbaca",!!C,C?"":"File config.js tidak ditemukan atau ada salah ketik di dalamnya.","Pastikan <code>config.js</code> ikut diunggah ke GitHub/Vercel di folder yang sama dengan index.html, dan isinya diawali <code>window.KURSUS_CONFIG = {</code>.")) return done();
+  const raw=String(C.SUPABASE_URL||"").trim(), url=raw.replace(/\/+$/,"").replace(/\/rest\/v1$/,"").replace(/\/+$/,""), key=String(C.SUPABASE_ANON_KEY||"").trim();
+  if(raw&&raw!==url) step("Alamat SUPABASE_URL dirapikan otomatis",true,`Di config.js tertulis <code>${esc(raw)}</code>. Yang dipakai: <code>${esc(url)}</code>. Sebaiknya perbaiki juga di config.js.`);
+  if(!step("SUPABASE_URL dan SUPABASE_ANON_KEY sudah diisi",!!(url&&key),url?`URL: <code>${esc(url)}</code>`:"Masih kosong.","Isi kedua nilai di config.js, lalu unggah ulang (commit) ke GitHub. Tunggu Vercel selesai deploy, lalu muat ulang halaman ini.")) return done();
+  if(!step("Format SUPABASE_URL benar",/^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(url),`Contoh yang benar: <code>https://abcdefgh.supabase.co</code>`,"Hapus tambahan seperti <code>/rest/v1</code> atau garis miring di akhir.")) return done();
+  if(!step("Pustaka Supabase termuat",!!window.supabase,"","Periksa koneksi internet, lalu muat ulang halaman.")) return done();
+  const db=window.supabase.createClient(url,key,{auth:{persistSession:false}});
+  const row={nama:"TES KONEKSI",kelas:"TES",no_absen:99,bab:1,judul_bab:"Tes koneksi",skor:0,benar:0,jumlah_soal:1,percobaan:1,lulus:false,jawaban:[]};
+  let err=null;
+  try{ const r=await db.from("nilai_kuis").insert(row); err=r.error; }catch(e){ err=e; }
+  if(!step("Mengirim nilai uji ke tabel nilai_kuis",!err,err?`Pesan error: <code>${esc(err.message||err)}</code>`:"Berhasil. Nilai siswa bisa masuk ke database.",why(err&&(err.message||err)))) return done();
+  const lj=s=>`Pesan error: <code>${esc(s.message||s)}</code>`;
+  let e2=null; try{ const r=await db.from("nilai_kuis").insert(Object.assign({},row,{kursus:"lanjutan"})); e2=r.error; }catch(e){ e2=e; }
+  step("Nilai kursus lanjutan bisa masuk",!e2,e2?lj(e2):"Kolom kursus sudah ada.","Jalankan file <code>supabase/lanjutan.sql</code> di SQL Editor Supabase, lalu tes lagi.");
+  let e3=null; try{ const r=await db.from("refleksi").insert({kursus:"lanjutan",nama:"TES KONEKSI",kelas:"TES",no_absen:99,perasaan:"tes",pemahaman:3,paling_paham:"tes",masih_bingung:"tes",cerita:"tes koneksi",pesan:""}); e3=r.error; }catch(e){ e3=e; }
+  step("Refleksi siswa bisa masuk",!e3,e3?lj(e3):"Tabel refleksi sudah siap.","Jalankan file <code>supabase/lanjutan.sql</code> di SQL Editor Supabase, lalu tes lagi.");
+  $("after").hidden=false;
+  $("after").innerHTML=`<b>Pengiriman nilai berfungsi.</b> Kalau nilai tetap tidak muncul di halaman guru:<br>
+   1. Login di <a href="guru.html">guru.html</a>. Baris <b>TES KONEKSI</b> seharusnya muncul di sana.<br>
+   2. Kalau tidak muncul, email akun guru belum terdaftar di tabel <code>guru</code>. Jalankan <code>supabase/perbaikan-login.sql</code> (ganti emailnya dulu).<br>
+   3. Nilai yang gagal terkirim sebelumnya akan dikirim ulang otomatis saat siswa membuka kursus lagi. Kuis yang dikerjakan dengan versi lama saat database belum terhubung tidak tersimpan, jadi siswa perlu menekan <b>Kerjakan ulang</b> pada kuis tersebut.`;
+  done();
+};
+function done(){ $("go").disabled=false; $("go").textContent="Tes lagi"; }
+})();
+</script>
+</body>
+</html>
